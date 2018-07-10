@@ -1,0 +1,960 @@
+---
+title: "Mesocosm Results"
+author: "Brianna Henry"
+date: "September 27, 2017"
+output: word_document
+---
+```{r}
+library(brms)
+library(ggplot2)
+```
+
+In all data, treatment 1 is control, treatment 2 is atrazine, treatment 3 is selenium, and treatment 4 is the atrazine and selenium combined treatment.
+
+Adult Biomass
+
+Adult biomass data is from the biodivnew file and is initially in g/0.36m2/4 days.
+
+```{r}
+urlfile<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/biodivnew.csv"
+biodivnew<-read.csv(urlfile)
+biodivnew$trt0f<-as.factor(biodivnew$trt0f)
+biodivnew$date0f<-as.factor(biodivnew$date0f)
+```
+
+Total Biomass
+
+Model
+
+```{r}
+get_prior(totbio~date0f+trt0f+date0f*trt0f +(1|tank),data=biodivnew,family=Gamma(link="log")) 
+
+mbiobrm<-brm(totbio~date0f+trt0f+date0f*trt0f +(1|tank),data=biodivnew,family=Gamma(link="log"),
+           prior=c(prior(cauchy(0,1),class=sd),
+                   prior(normal(0,2),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(mbiobrm)
+pp_check(mbiobrm,type="hist")
+pp_check(mbiobrm,type="boxplot")
+```
+
+
+Chironomid Biomass
+
+Model
+
+```{r}
+get_prior(biochiro~trt0f+date0f+date0f*trt0f +(1|tank),data=biodivnew,family=Gamma(link="log"))
+
+chirobio<-brm(biochiro~date0f*trt0f +(1|tank),data=biodivnew,family=Gamma(link="log"),
+            prior=c(prior(cauchy(0,1),class=sd),
+                    prior(normal(0,2),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(chirobio)
+pp_check(chirobio,type="hist")
+pp_check(chirobio,type="boxplot")
+```
+
+
+Libellulid Biomass
+
+Model
+
+```{r}
+get_prior(bio_odo~trt0f+date0f+date0f*trt0f +(1|tank),data=biodivnew,family=Gamma(link="log"))
+
+odobio<-brm(bio_odo~trt0f+date0f+date0f*trt0f +(1|tank),data=biodivnew,family=Gamma(link="log"),
+            prior=c(prior(cauchy(0,1),class=sd),
+                    prior(normal(0,2),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(odobio)
+pp_check(odobio,type="hist")
+pp_check(odobio,type="boxplot")
+```
+
+Example of Comparison among Treatments
+
+Extract posterior samples and add appropriate offsets from the intercept to get estimates of abundance for each treatment on each date 
+
+```{r}
+mbiopost<-posterior_samples(mbiobrm)
+str(mbiopost)
+
+btrt1_3<-mbiopost$b_Intercept+mbiopost$b_date0f7D4D2016 #posterior treatment 1 on date 3
+btrt2_3<-mbiopost$b_Intercept+mbiopost$b_date0f7D4D2016+mbiopost$b_trt0f2+mbiopost$`b_date0f7D4D2016:trt0f2`
+
+#Trt 1 & 2 on date 3#
+btrt1_2_d3<-(((exp(btrt1_3)*2.78)/4))-(((exp(btrt2_3)*2.78)/4))
+mean(btrt1_2_d3)
+quantile(btrt1_2_d3,probs=c(0.025,0.975)) 
+sum(btrt1_2_d3>0)/4000 #87.8%
+```
+
+
+Preparing to Plot
+
+Create data frame for total, chironomid, and libellulid biomass, edit date as a properly ordered factor so that it plots dates in the right order, convert estimates and upper and lower quantiles to g/m2/d.
+
+```{r}
+#TOTAL
+totbplot<-marginal_effects(mbiobrm, robust=FALSE)
+totbplot<-as.data.frame(totbplot$`date0f:trt0f`)
+totbplot$date3<-factor(totbplot$date0f, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+totbplot$est2<-(totbplot$estimate__)*2.78/4
+totbplot$upper2<-(totbplot$upper__)*2.78/4
+totbplot$lower2<-(totbplot$lower__)*2.78/4
+
+#CHIRONOMID
+chirbplot<-marginal_effects(chirobio, robust=FALSE)
+chirbplot<-as.data.frame(chirbplot$`date0f:trt0f`)
+chirbplot$date2<-factor(chirbplot$date0f, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+chirbplot$est2<-(chirbplot$estimate__)*2.78/4
+chirbplot$upper2<-(chirbplot$upper__)*2.78/4
+chirbplot$lower2<-(chirbplot$lower__)*2.78/4
+
+#LIBELLULID
+odobplot<-marginal_effects(odobio, effects="date0f:trt0f", robust=FALSE)
+odobplot<-as.data.frame(odobplot$`date0f:trt0f`)
+odobplot$date2<-factor(odobplot$date0f, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+odobplot$est2<-(odobplot$estimate__)*2.78/4
+odobplot$upper2<-(odobplot$upper__)*2.78/4
+odobplot$lower2<-(odobplot$lower__)*2.78/4
+```
+
+Combine all three data frames to one and convert data to mgDM, allowing for creation of a facetted plot, change date to day of experiment
+
+```{r}
+chirbplot$group<-"Chironomidae Adults"
+odobplot$group<-"Libellulidae Adults"
+totbplot$group<-"Total Adults"
+
+totbplot$date2<-totbplot$date3
+totbplot$date3<-NULL
+totbplot$totbio<-NULL
+chirbplot$biochiro<-NULL
+odobplot$bio_odo<-NULL
+adubiomass<-rbind(totbplot, chirbplot, odobplot)
+
+adubiomass$group2<-factor(adubiomass$group, levels= c("Total Adults", "Chironomidae Adults", "Libellulidae Adults"))
+adubiomass$est3<-(adubiomass$est2)*1000
+adubiomass$lower3<-(adubiomass$lower2)*1000
+adubiomass$upper3<-(adubiomass$upper2)*1000
+
+adubiomass$date3<-ifelse(adubiomass$date2=="6/20/2016", "Day 0",
+                     ifelse(adubiomass$date2=="6/28/2016", "Day 7",
+                            ifelse(adubiomass$date2=="7/4/2016", "Day 13",
+                                   ifelse(adubiomass$date2=="7/12/2016", "Day 21",
+                                          ifelse(adubiomass$date2=="7/18/2016", "Day 27",
+                                                 ifelse(adubiomass$date2=="7/26/2016", "Day 35", "Day 42"))))))
+```
+
+Create plot
+
+```{r}
+ggplot(adubiomass,aes(x=date3,y=est3, fill=trt0f, shape=trt0f))+
+  geom_errorbar(aes(ymin=lower3, ymax=upper3), width=.1, position=position_dodge(width = 0.4))+
+  geom_point(position=position_dodge(width = 0.4), size=4)+
+  facet_grid(group2~., scales="free")+
+  xlab("Day of Experiment")+
+  ylab(expression(paste("Adult Biomass (mgDM/m"^2,"/day)")))+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_bw()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"),
+        panel.grid = element_blank())
+```
+
+Adult Weekly Abundance
+
+Adult abundance data also comes from the biodivnew data file, which is already imported above. Data are in # insects/0.36m2/4days.
+
+Model
+
+```{r}
+get_prior(totno~date0f+trt0f+date0f*trt0f +(1|tank),data=biodivnew,family=poisson(link="log"))
+
+abundadult<-brm(totno~date0f+trt0f+date0f*trt0f +(1|tank),data=biodivnew,family=poisson(link="log"),
+           prior=c(prior(cauchy(0,1),class=sd),
+                   prior(normal(0,5),class=b)))
+```
+
+
+Model Checks
+
+```{r}
+print(abundadult)
+pp_check(abundadult,type="hist") 
+pp_check(abundadult,type="boxplot")
+```
+
+Comparisons on a Given Date
+
+Extract posterior samples and add appropriate offsets from the intercept to get estimates of abundance for each treatment on each date 
+
+```{r}
+m2post<-posterior_samples(abundadult)
+str(m2post)
+
+#estimate posteriors for each date*trt combination. 
+
+trt1_2<-m2post$b_Intercept+m2post$b_date0f2 #posterior treatment 1 on date 2
+trt1_3<-m2post$b_Intercept+m2post$b_date0f3 #posterior treatment 1 on date 3
+trt1_4<-m2post$b_Intercept+m2post$b_date0f4 #posterior treatment 1 on date 3
+trt1_5<-m2post$b_Intercept+m2post$b_date0f5 #posterior treatment 1 on date 3
+trt1_6<-m2post$b_Intercept+m2post$b_date0f6 #posterior treatment 1 on date 3
+trt1_7<-m2post$b_Intercept+m2post$b_date0f7 #posterior treatment 1 on date 3
+
+trt2_2<-m2post$b_Intercept+m2post$b_date0f2+m2post$b_trt0f2+m2post$`b_date0f2:trt0f2`
+trt2_3<-m2post$b_Intercept+m2post$b_date0f3+m2post$b_trt0f2+m2post$`b_date0f3:trt0f2`
+trt2_4<-m2post$b_Intercept+m2post$b_date0f4+m2post$b_trt0f2+m2post$`b_date0f4:trt0f2`
+trt2_5<-m2post$b_Intercept+m2post$b_date0f5+m2post$b_trt0f2+m2post$`b_date0f5:trt0f2`
+trt2_6<-m2post$b_Intercept+m2post$b_date0f6+m2post$b_trt0f2+m2post$`b_date0f6:trt0f2`
+trt2_7<-m2post$b_Intercept+m2post$b_date0f7+m2post$b_trt0f2+m2post$`b_date0f7:trt0f2`
+
+trt3_2<-m2post$b_Intercept+m2post$b_date0f2+m2post$b_trt0f3+m2post$`b_date0f2:trt0f3`
+trt3_3<-m2post$b_Intercept+m2post$b_date0f3+m2post$b_trt0f3+m2post$`b_date0f3:trt0f3`
+trt3_4<-m2post$b_Intercept+m2post$b_date0f4+m2post$b_trt0f3+m2post$`b_date0f4:trt0f3`
+trt3_5<-m2post$b_Intercept+m2post$b_date0f5+m2post$b_trt0f3+m2post$`b_date0f5:trt0f3`
+trt3_6<-m2post$b_Intercept+m2post$b_date0f6+m2post$b_trt0f3+m2post$`b_date0f6:trt0f3`
+trt3_7<-m2post$b_Intercept+m2post$b_date0f7+m2post$b_trt0f3+m2post$`b_date0f7:trt0f3`
+
+trt4_2<-m2post$b_Intercept+m2post$b_date0f2+m2post$b_trt0f4+m2post$`b_date0f2:trt0f4` 
+trt4_3<-m2post$b_Intercept+m2post$b_date0f3+m2post$b_trt0f4+m2post$`b_date0f3:trt0f4`
+trt4_4<-m2post$b_Intercept+m2post$b_date0f4+m2post$b_trt0f4+m2post$`b_date0f4:trt0f4` 
+trt4_5<-m2post$b_Intercept+m2post$b_date0f5+m2post$b_trt0f4+m2post$`b_date0f5:trt0f4` 
+trt4_6<-m2post$b_Intercept+m2post$b_date0f6+m2post$b_trt0f4+m2post$`b_date0f6:trt0f4` 
+trt4_7<-m2post$b_Intercept+m2post$b_date0f7+m2post$b_trt0f4+m2post$`b_date0f7:trt0f4` 
+```
+
+Comparison example
+
+```{r}
+#Trt 1 & 4 
+trt1_4_d3<-(((exp(trt1_3)*2.78)/4))-(((exp(trt4_3)*2.78)/4)) 
+mean(trt1_4_d3) #Average of 39 fewer insects emerging per m2 per day relative to the control on date 3
+quantile(trt1_4_d3,probs=c(0.025,0.975)) 
+sum(trt1_4_d3>0)/4000 #We are 95% certain that the difference in emergence between trts 1 and 4 on date 3 was greater than zero.
+```
+
+
+Preparing to plot
+
+Create data frame, edit date as a properly ordered factor so that it plots dates in the right order, change date to day of experiment, convert estimates and upper and lower quantiles to #/m2/day.
+
+```{r}
+aaplot<-marginal_effects(abundadult, robust=FALSE)
+aaplot<-as.data.frame(aaplot$`date0f:trt0f`)
+aaplot$date2<-factor(aaplot$date0f, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+aaplot$est2<-(aaplot$estimate__)*2.78/4
+aaplot$upper2<-(aaplot$upper__)*2.78/4
+aaplot$lower2<-(aaplot$lower__)*2.78/4
+
+aaplot$date3<-ifelse(aaplot$date2=="6/20/2016", "Day 0",
+                 ifelse(aaplot$date2=="6/28/2016", "Day 7",
+                        ifelse(aaplot$date2=="7/4/2016", "Day 13",
+                               ifelse(aaplot$date2=="7/12/2016", "Day 21",
+                                      ifelse(aaplot$date2=="7/18/2016", "Day 27",
+                                             ifelse(aaplot$date2=="7/26/2016", "Day 35", "Day 42"))))))
+```
+
+Plot
+
+```{r}
+ggplot(aaplot,aes(x=date3,y=est2, fill=trt0f))+
+  geom_errorbar(aes(ymin=lower2, ymax=upper2), width=.1, position=position_dodge(width=0.4))+
+  geom_point(position=position_dodge(width=0.4), size=4, shape=21)+
+  xlab("Day of Experiment")+
+  ylab(expression(paste("Total Adult Abundance (#/m"^2,"/day)")))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey20","grey50","grey80"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))
+```
+
+
+Adult Cumulative Abundance 
+
+From the above model, we use the posterior distribution to estimate the cumulative emergence from each treatment and make comparisons.
+
+```{r}
+trt1_tot<-(((exp(trt1_2)*2.78)/4))+(((exp(trt1_3)*2.78)/4))+(((exp(trt1_4)*2.78)/4))+(((exp(trt1_5)*2.78)/4))+(((exp(trt1_6)*2.78)/4))+(((exp(trt1_7)*2.78)/4))
+trt2_tot<-(((exp(trt2_2)*2.78)/4))+(((exp(trt2_3)*2.78)/4))+(((exp(trt2_4)*2.78)/4))+(((exp(trt2_5)*2.78)/4))+(((exp(trt2_6)*2.78)/4))+(((exp(trt2_7)*2.78)/4))
+trt3_tot<-(((exp(trt3_2)*2.78)/4))+(((exp(trt3_3)*2.78)/4))+(((exp(trt3_4)*2.78)/4))+(((exp(trt3_5)*2.78)/4))+(((exp(trt3_6)*2.78)/4))+(((exp(trt3_7)*2.78)/4))
+trt4_tot<-(((exp(trt4_2)*2.78)/4))+(((exp(trt4_3)*2.78)/4))+(((exp(trt4_4)*2.78)/4))+(((exp(trt4_5)*2.78)/4))+(((exp(trt4_6)*2.78)/4))+(((exp(trt4_7)*2.78)/4))
+
+mean(trt1_tot) #mean control 
+mean(trt2_tot) #mean atrazine
+mean(trt3_tot) #mean selenium
+mean(trt4_tot) #mean combined
+
+quantile(trt1_tot,probs=c(0.025,0.975)) #quantile control
+quantile(trt2_tot,probs=c(0.025,0.975)) #quantile atrazine
+quantile(trt3_tot,probs=c(0.025,0.975)) #quantile selenium
+quantile(trt4_tot,probs=c(0.025,0.975)) #quantile combined
+```
+
+Example of comparisons among treatments
+
+```{r}
+#fold difference in cumulative emergence
+diff1_4_fold<-trt1_tot/trt4_tot
+quantile(diff1_4_fold, probs=c(0.025,0.975))
+#0.9-2.5 fold change
+
+#Comparing Treatments 1 & 4
+diff1_4<-trt1_tot-trt4_tot #difference between treatments estimated at each of the 4000 iterations of the MCMC. 
+mean(diff1_4) #Average of 90 more insects emerging from trt1 than trt4 per m2 over the 6 week period
+quantile(diff1_4,probs=c(0.025,0.975)) #We are 95% certain that the true difference in cumulative emergence between trt1 and 4 was between -28 and 225
+sum(diff1_4>0)/4000 #There is a 93% probability that the difference in these treatments was > 0
+```
+
+
+Larval Biomass
+
+Larval biomass data is from the larvbio2 file and is in mgDM/0.032m2.
+
+```{r}
+urlfile2<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/larvbio2.csv"
+larvbio2<-read.csv(urlfile2)
+larvbio2$date0f<-as.factor(larvbio2$date)
+larvbio2$trt0f<-as.factor(larvbio2$trt)
+```
+
+
+Total Biomass
+
+Model
+
+```{r}
+get_prior(totbio~date0f+trt0f+date0f*trt0f +(1|tank),data=larvbio2,family=Gamma(link="log")) 
+
+lbio<-brm(totbio~date0f+trt0f+date0f*trt0f +(1|tank),data=larvbio2,family=Gamma(link="log"),
+             prior=c(prior(cauchy(0,1),class=sd),
+                     prior(normal(0,2),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(lbio)
+pp_check(lbio,type="hist")
+pp_check(lbio,type="boxplot")
+```
+
+
+Chironomid Biomass
+
+Model
+
+```{r}
+get_prior(chirobio~date0f+trt0f+date0f*trt0f +(1|tank),data=larvbio2,family=Gamma(link="log")) 
+
+chirlbio<-brm(chirobio~date0f+trt0f+date0f*trt0f +(1|tank),data=larvbio2,family=Gamma(link="log"),
+          prior=c(prior(cauchy(0,1),class=sd),
+                  prior(normal(0,2),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(chirlbio)
+pp_check(chirlbio,type="hist")
+pp_check(chirlbio,type="boxplot")
+```
+
+
+Libellulid Biomass
+
+Model
+
+```{r}
+get_prior(odobio~date0f+trt0f+date0f*trt0f +(1|tank),data=larvbio2,family=Gamma(link="log")) 
+
+odolbio<-brm(odobio~date0f+trt0f+date0f*trt0f +(1|tank),data=larvbio2,family=Gamma(link="log"),
+              prior=c(prior(cauchy(0,1),class=sd),
+                      prior(normal(0,2),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(odolbio)
+pp_check(odolbio,type="hist")
+pp_check(odolbio,type="boxplot")
+```
+
+Example of Comparison among Treatments
+
+```{r}
+lbpost<-posterior_samples(lbio)
+str(lbpost)
+
+#Date 7/6/16
+lbtrt1_2<-lbpost$b_Intercept+lbpost$b_date0f7D6D2016
+lbtrt2_2<-lbpost$b_Intercept+lbpost$b_trt0f2+lbpost$b_date0f7D6D2016+lbpost$`b_date0f7D6D2016:trt0f2`
+lbtrt3_2<-lbpost$b_Intercept+lbpost$b_trt0f3+lbpost$b_date0f7D6D2016+lbpost$`b_date0f7D6D2016:trt0f3`
+lbtrt4_2<-lbpost$b_Intercept+lbpost$b_trt0f4+lbpost$b_date0f7D6D2016+lbpost$`b_date0f7D6D2016:trt0f4`
+
+#Trt 1 & 4#
+lbdiff1_4<-(exp(lbtrt4_2)*31.25)-(exp(lbtrt1_2)*31.25)
+mean(lbdiff1_4) 
+quantile(lbdiff1_4, probs=c(0.025,0.975))
+sum(lbdiff1_4>0)/4000 #87% prob that difference >0
+```
+
+
+Preparing to plot
+
+Create data frame for each total larval biomass, chironomid larval biomass, and libellulid larval biomass, edit date as a properly ordered factor so that it plots dates in the right order, convert estimates and upper and lower quantiles to mgDM/m2.
+
+```{r}
+#TOTAL 
+totlbplot<-marginal_effects(lbio, robust=FALSE)
+totlbplot<-as.data.frame(totlbplot$`date0f:trt0f`)
+totlbplot$date2<-factor(totlbplot$date0f, levels = c("6/20/2016", "7/6/2016","8/2/2016"))
+totlbplot$est2<-(totlbplot$estimate__)*31.25
+totlbplot$upper2<-(totlbplot$upper__)*31.25
+totlbplot$lower2<-(totlbplot$lower__)*31.25
+
+#CHIRONOMID
+chirlbplot<-marginal_effects(chirlbio, robust=FALSE)
+chirlbplot<-as.data.frame(chirlbplot$`date0f:trt0f`)
+chirlbplot$date2<-factor(chirlbplot$date0f, levels = c("6/20/2016", "7/6/2016","8/2/2016"))
+chirlbplot$est2<-(chirlbplot$estimate__)*31.25
+chirlbplot$upper2<-(chirlbplot$upper__)*31.25
+chirlbplot$lower2<-(chirlbplot$lower__)*31.25
+
+#LIBELLULID
+odolbplot<-marginal_effects(odolbio, robust=FALSE)
+odolbplot<-as.data.frame(odolbplot$`date0f:trt0f`)
+odolbplot$date2<-factor(odolbplot$date0f, levels = c("6/20/2016", "7/6/2016","8/2/2016"))
+odolbplot$est2<-(odolbplot$estimate__)*31.25
+odolbplot$upper2<-(odolbplot$upper__)*31.25
+odolbplot$lower2<-(odolbplot$lower__)*31.25
+```
+
+Combine all three data frames to one, allowing for creation of a facetted plot, change date to day of experiment
+
+```{r}
+chirlbplot$chirobiog<-NULL
+odolbplot$odobiog<-NULL
+totlbplot$totbiog<-NULL
+chirlbplot$chirobio<-NULL
+odolbplot$odobio<-NULL
+totlbplot$totbio<-NULL
+chirlbplot$group<-"Chironomidae Larvae"
+odolbplot$group<-"Libellulidae Larvae"
+totlbplot$group<-"Total Larvae"
+larv_data<-rbind(chirlbplot,odolbplot,totlbplot)
+larv_data$group2<-ifelse(larv_data$group=="total_larvae", "Total Larvae",
+                         ifelse(larv_data$group=="chiro_larvae", "Chironomidae Larvae", "Libellulidae Larvae"))
+
+larv_data$group3<-factor(larv_data$group, levels=c("Total Larvae", "Chironomidae Larvae", "Libellulidae Larvae"))
+larv_data$date3<-ifelse(larv_data$date2=="6/20/2016", "Day 0",
+                     ifelse(larv_data$date2=="7/6/2016", "Day 15", "Day 42"))
+```
+
+Create plot
+
+```{r}
+ggplot(larv_data,aes(x=date3,y=est2, fill=trt0f, shape=trt0f))+
+  geom_errorbar(aes(ymin=lower2, ymax=upper2), width=.1, position=position_dodge(width=0.4))+
+  facet_grid(group3~.,scales="free")+
+  geom_point(position=position_dodge(width=0.4), size=4)+
+  xlab("Day of Experiment")+
+  ylab(expression(paste("Larval Biomass (mgDM/m"^2,")")))+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_bw()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"),
+        panel.grid=element_blank())
+```
+
+
+Larval Abundance
+
+Larval abundace data come from the dbentab data file and are in #/0.032m2.
+
+```{r}
+urlfile3<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/dbentab.csv"
+dbentab<-read.csv(urlfile3)
+dbentab$trt0f<-as.factor(dbentab$trt)
+dbentab$date0f<-as.factor(dbentab$date)
+```
+
+Model
+
+```{r}
+get_prior(nobugs~date0f+trt0f+date0f*trt0f +(1|tank),data=dbentab,family=poisson(link="log"))
+
+larvabund<-brm(nobugs~date0f+trt0f+date0f*trt0f +(1|tank),data=dbentab,family=poisson(link="log"),
+           prior=c(prior(cauchy(0,1),class=sd),
+                   prior(normal(0,10),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(larvabund)
+pp_check(larvabund,type="hist") 
+pp_check(larvabund,type="boxplot")
+```
+
+Example of Comparison among Treatments
+
+```{r}
+mlpost<-posterior_samples(larvabund)
+str(mlpost)
+
+ltrt1_1<-mlpost$b_Intercept
+ltrt2_1<-mlpost$b_Intercept+mlpost$b_trt0f2
+
+#Differences on Date 1
+#Trt 1 & 2
+ltrt1_2_d1<-(exp(ltrt1_1))-(exp(ltrt2_1))
+mean(ltrt1_2_d1)
+quantile(ltrt1_2_d1,probs=c(0.025,0.975))
+sum(ltrt1_2_d1>0)/4000 #72.3% prob diff > 0
+```
+
+
+Preparing to plot
+
+Create data frame, edit date as a properly ordered factor so that it plots dates in the right order, change date to day of experiment, convert estimates and upper and lower quantiles to #/m2.
+
+```{r}
+laplot<-marginal_effects(larvabund, robust=FALSE)
+laplot<-as.data.frame(laplot$`date0f:trt0f`)
+laplot$date2<-factor(laplot$date0f, levels = c("6/20/2016","7/6/2016","8/2/2016"))
+laplot$est2<-(laplot$estimate__)*31.25
+laplot$upper2<-(laplot$upper__)*31.25
+laplot$lower2<-(laplot$lower__)*31.25
+laplot$date3<-ifelse(laplot$date2=="6/20/2016", "Day 0",
+                        ifelse(laplot$date2=="7/6/2016", "Day 15", "Day 42"))
+```
+
+Plot
+
+```{r}
+ggplot(laplot,aes(x=date3,y=est2, fill=trt0f, shape=trt0f))+
+  geom_errorbar(aes(ymin=lower2, ymax=upper2), width=.1, position=position_dodge(width=0.4))+
+  geom_point(position=position_dodge(width=0.4), size=4)+
+  xlab("Day of Experiment")+
+  ylab(expression(paste("Total Larval Abundance (#/m"^2,")")))+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))
+```
+
+
+
+Chlorophyll
+
+Data for chlorophyll models comes from the chla data file. Units for benthic chlorphyll are in ug/cm2 and units for water column chlorophyll are in mg/l.
+
+```{r}
+urlfile4<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/chl.csv"
+chl<-read.csv(urlfile4)
+chl$trt0f<-as.factor(chl$trt)
+chl$date0f<-as.factor(chl$date)
+```
+
+Benthic Chlorophyll
+
+Model
+```{r}
+get_prior(bchlug_cm2_new~date0f+trt0f+date0f*trt0f +(1|tank),data=chl,family=Gamma(link="log"))
+
+bchlbrm<-brm(bchlug_cm2_new~date0f+trt0f+date0f*trt0f +(1|tank),data=chl,family=Gamma(link="log"),
+             prior=c(prior(cauchy(0,1),class=sd),
+                     prior(normal(0,5),class=b)))
+```
+
+Model Checks
+```{r}
+print(bchlbrm)
+pp_check(bchlbrm,type="hist")
+pp_check(bchlbrm,type="boxplot")
+```
+
+Example of Comparison among Treatments
+
+```{r}
+chlpost<-posterior_samples(bchlbrm)
+str(chlpost)
+
+bchltrt2_3<-chlpost$b_Intercept+chlpost$b_date0f3+chlpost$b_trt0f2+chlpost$`b_date0f3:trt0f2`
+bchltrt4_3<-chlpost$b_Intercept+chlpost$b_date0f3+chlpost$b_trt0f4+chlpost$`b_date0f3:trt0f4`
+
+#Date 3#
+#Trt 2 & 4#
+bchltrt2_4_d3<-exp(bchltrt2_3)-exp(bchltrt4_3)
+mean(bchltrt2_4_d3) #Average of 6.1 higher mg/l from control than selenium
+quantile(bchltrt2_4_d3,probs=c(0.025,0.975)) 
+sum(bchltrt2_4_d3>0)/4000 #91.5% probability that these treatments are different
+```
+
+Preparing to plot
+
+Create data frame, edit date as a properly ordered factor so that it plots dates in the right order, switch date to day of experiment.
+
+```{r}
+bchlplot<-marginal_effects(bchlbrm, robust=FALSE)
+bchlplot<-as.data.frame(bchlplot$`date0f:trt0f`)
+bchlplot$date2<-factor(bchlplot$date0f, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+
+bchlplot$date3<-ifelse(bchlplot$date2=="6/20/2016", "Day 0",
+                                         ifelse(bchlplot$date2=="6/28/2016", "Day 7",
+                                                ifelse(bchlplot$date2=="7/4/2016", "Day 13",
+                                                       ifelse(bchlplot$date2=="7/12/2016", "Day 21",
+                                                              ifelse(bchlplot$date2=="7/18/2016", "Day 27",
+                                                                     ifelse(bchlplot$date2=="7/26/2016", "Day 35", "Day 42"))))))
+
+bchlplot$date4<-factor(bchlplot$date3, levels=c("Day 0", "Day 7", "Day 13", "Day 21", "Day 27", "Day 35", "Day 42"))
+```
+
+Plot
+
+```{r}
+ggplot(bchlplot,aes(x=date4,y=estimate__, color=trt0f, group=trt0f))+
+  geom_errorbar(aes(ymin=lower__, ymax=upper__), alpha=0.3, width=.1, position=position_dodge(width=0.4))+
+  geom_point(position=position_dodge(width=0.4), size=4)+
+  geom_line(position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab(expression(paste("Benthic Chlorophyll (", mu, "g/cm2)")))+
+  scale_color_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0", "dodgerblue4","forestgreen","darkorange"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="12"))+
+  theme(legend.text = element_text(size="12"))
+```
+
+
+Water Column Chlorophyll
+
+Model
+
+```{r}
+get_prior(wchl~date0f+trt0f+date0f*trt0f +(1|tank),data=chl,family=Gamma(link="log"))
+
+wchlbrm<-brm(wchl~date0f+trt0f+date0f*trt0f +(1|tank),data=chl,family=Gamma(link="log"),
+            prior=c(prior(cauchy(0,1),class=sd),
+                    prior(normal(0,5),class=b)))
+```
+
+Model Checks
+
+```{r}
+print(wchlbrm)
+pp_check(wchlbrm,type="hist")
+pp_check(wchlbrm,type="boxplot")
+```
+
+Example of Comparison among Treatments
+
+```{r}
+wchlpost<-posterior_samples(wchlbrm)
+str(wchlpost)
+
+wchltrt1_1<-wchlpost$b_Intercept
+wchltrt3_1<-wchlpost$b_Intercept+wchlpost$b_trt0f3
+
+#Date 1#
+#Trt 1 & 3#
+wchltrt1_3_d1<-exp(wchltrt1_1)-exp(wchltrt3_1)
+mean(wchltrt1_3_d1) #Average of 2.7 higher mg/l from control than selenium
+quantile(wchltrt1_3_d1,probs=c(0.025,0.975)) 
+sum(wchltrt1_3_d1>0)/4000 #93% probability that these treatments are different
+```
+
+Preparing to plot
+
+Create data frame, edit date as a properly ordered factor so that it plots dates in the right order, change date to day of experiment 
+
+```{r}
+wchlplot<-marginal_effects(wchlbrm, robust=FALSE)
+wchlplot<-as.data.frame(wchlplot$`date0f:trt0f`)
+wchlplot$date2<-factor(wchlplot$date0f, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+
+wchlplot$date3<-ifelse(wchlplot$date2=="6/20/2016", "Day 0",
+                         ifelse(wchlplot$date2=="6/28/2016", "Day 7",
+                                ifelse(wchlplot$date2=="7/4/2016", "Day 13",
+                                       ifelse(wchlplot$date2=="7/12/2016", "Day 21",
+                                              ifelse(wchlplot$date2=="7/18/2016", "Day 27",
+                                                     ifelse(wchlplot$date2=="7/26/2016", "Day 35", "Day 42"))))))
+
+wchlplot$date4<-factor(wchlplot$date3, levels=c("Day 0", "Day 7", "Day 13", "Day 21", "Day 27", "Day 35", "Day 42"))
+```
+
+Plot
+
+```{r}
+ggplot(wchlplot,aes(x=date4,y=estimate__, color=trt0f,group=trt0f))+
+  geom_errorbar(aes(ymin=lower__, ymax=upper__),alpha=0.3, width=.1, position=position_dodge(width=0.4))+
+  geom_point(position=position_dodge(width=0.4), size=4)+
+  geom_line(position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab("Water Column Chlorophyll (mg/L)")+
+  scale_color_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0", "dodgerblue4","forestgreen","darkorange"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="12"))+
+  theme(legend.text = element_text(size="12"))
+```
+
+Body Size Models
+
+Data
+
+```{r}
+urlfile5<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/chiro_g_ind.csv"
+chiro_g_ind<-read.csv(urlfile5)
+chiro_g_ind$trt0f<-as.factor(chiro_g_ind$trt)
+chiro_g_ind$date0f<-as.factor(chiro_g_ind$date)
+chiro_g_ind$morph0f<-as.factor(chiro_g_ind$morph)
+
+urlfile6<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/dragon_g_ind.csv"
+dragon_g_ind<-read.csv(urlfile6)
+dragon_g_ind$trt0f<-as.factor(dragon_g_ind$trt)
+dragon_g_ind$date0f<-as.factor(dragon_g_ind$date)
+
+urlfile7<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/may_g_ind.csv"
+may_g_ind<-read.csv(urlfile7)
+may_g_ind$trt0f<-as.factor(may_g_ind$trt)
+may_g_ind$date0f<-as.factor(may_g_ind$date)
+```
+
+Effect of Treatment on Chironomid Body Size
+
+```{r}
+get_prior(g_ind~date0f*trt0f*morph0f+(1|tank),data=chiro_g_ind,family=Gamma(link="log"))
+
+chirobody<-brm(g_ind~date0f*trt0f*morph0f+(1|tank),data=chiro_g_ind,family=Gamma(link="log"),
+             prior=c(prior(cauchy(0,1),class=sd),
+                     prior(normal(0,1),class=b)))
+print(chirobody)
+pp_check(chirobody,type="hist")
+pp_check(chirobody,type="boxplot")
+
+marginal_effects(chirobody, robust=FALSE)
+```
+
+Effect of Treatment on Chironomid Body Size
+
+```{r}
+get_prior(g_ind~date0f*trt0f+(1|tank),data=dragon_g_ind,family=Gamma(link="log"))
+
+dragonbody<-brm(g_ind~date0f*trt0f+(1|tank),data=dragon_g_ind,family=Gamma(link="log"),
+               prior=c(prior(cauchy(0,1),class=sd),
+                       prior(normal(0,1),class=b)))
+
+marginal_effects(dragonbody, robust=FALSE)
+```
+
+Effect of Treatment on Chironomid Body Size
+
+```{r}
+get_prior(g_ind~date0f*trt0f+(1|tank),data=may_g_ind,family=Gamma(link="log"))
+
+maybody<-brm(g_ind~date0f*trt0f+(1|tank),data=may_g_ind,family=Gamma(link="log"),
+                prior=c(prior(cauchy(0,1),class=sd),
+                        prior(normal(0,1),class=b)))
+marginal_effects(maybody, robust=FALSE)
+```
+
+
+Effects of Dragonflies in the Last 3 Weeks
+
+Data
+
+```{r}
+urlfile8<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/odononew.csv"
+odononew<-read.csv(urlfile8)
+
+odononew$trt0f<-as.factor(odononew$trt)
+odononew$date0f<-as.factor(odononew$date)
+```
+
+Model with just Date and Treatment as Predictors for last 3 Weeks
+
+```{r}
+get_prior(totnonew~date0f*trt0f +(1|tank),data=odononew,family=poisson(link="log"))
+
+abundadultend<-brm(totno~date0f*trt0f +(1|tank),data=odononew,family=poisson(link="log"),
+                prior=c(prior(cauchy(0,1),class=sd),
+                        prior(normal(0,5),class=b)))
+
+
+print(abundadultend)
+pp_check(abundadultend,type="hist") 
+pp_check(abundadultend,type="boxplot")
+```
+
+Model with Treatment and Dragonfly Abundance as Predictors, and Date as a Random Effect for last 3 Weeks
+
+```{r}
+odomodel2<-brm(totno~trt0f*no_odo +(1|tank/date0f),data=odononew,family=poisson(link="log"),
+              prior=c(prior(cauchy(0,1),class=sd),
+                      prior(normal(0,5),class=b)))
+print(odomodel2)
+pp_check(odomodel2,type="hist") 
+pp_check(odomodel2,type="boxplot")
+```
+
+Model Comparison
+
+```{r}
+waic(odomodel2, abundadultend)
+```
+
+Odonate Model Plot
+
+```{r}
+odomplot<-marginal_effects(odomodel2)
+odomplot<-data.frame(odomplot$`no_odo:trt0f`)
+odomplot$trt2<-ifelse(odomplot$trt0f=="1", "Control",
+                      ifelse(odomplot$trt0f=="2", "Atrazine",
+                             ifelse(odomplot$trt0f=="3", "Selenium", "Atrazine and Selenium")))
+odomplot$trt3<-factor(odomplot$trt2, levels=c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"))
+odomplot$est<-(odomplot$estimate__)*2.78/4
+odomplot$lower<-(odomplot$lower__)*2.78/4
+odomplot$upper<-(odomplot$upper__)*2.78/4
+odomplot$odo<-(odomplot$no_odo)*2.78/4
+
+odomodelplot<-ggplot(odomplot, aes(x=odo, y=est, ymin=lower, ymax=upper, group=trt3))+
+      geom_line()+
+      geom_ribbon(alpha=0.1)+
+      ylab(expression(paste("Non-odonate Adult Insects (#/m"^2,"/day)")))+
+      xlab(expression(paste("Odonates (#/m"^2,"/day)")))+
+      theme_classic()+
+      scale_y_log10()+
+      facet_wrap(~trt3, scales="free")
+
+odomodelplot
+```
+
+
+Water Quality Data Plots
+
+Data
+
+```{r}
+urlfile9<-"https://raw.githubusercontent.com/briannahenry/Mesocosm2/master/WQ_new.csv"
+WQ<-read.csv(urlfile9)
+
+WQ$date2<-factor(WQ$date, levels = c("6/20/2016","6/28/2016", "7/4/2016", "7/12/2016", "7/18/2016", "7/26/2016", "8/2/2016"))
+WQ$trt0f<-as.factor(WQ$trt)
+
+WQ$date3<-ifelse(WQ$date2=="6/20/2016", "Day 0",
+                     ifelse(WQ$date2=="6/28/2016", "Day 7",
+                            ifelse(WQ$date2=="7/4/2016", "Day 13",
+                                   ifelse(WQ$date2=="7/12/2016", "Day 21",
+                                          ifelse(WQ$date2=="7/18/2016", "Day 27",
+                                                 ifelse(WQ$date2=="7/26/2016", "Day 35", "Day 42"))))))
+WQ$date4<-factor(WQ$date3, levels=c("Day 0", "Day 7", "Day 13", "Day 21", "Day 27", "Day 35", "Day 42"))
+```
+
+Plots
+
+```{r}
+######Dissolved Oxygen#####
+DOplot<-ggplot(WQ,aes(x=date4,y=do,ymin=sdlow2,ymax=sdhi2,fill=trt0f, shape=trt0f))+
+  geom_errorbar(position=position_dodge(width=0.4), alpha=0.3, width=0.1)+
+  geom_point(size=4,position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab("Dissolved Oxygen (mg/L)")+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))  
+
+DOplot
+
+#####PH####
+PHplot<-ggplot(WQ,aes(x=date4,y=ph,ymin=sdlow,ymax=sdhi,fill=trt0f, shape=trt0f))+
+  geom_errorbar(position=position_dodge(width=0.4), alpha=0.3, width=0.1)+
+  geom_point(size=4,position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab("pH")+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))  
+
+PHplot
+
+
+#####Conductivity#####
+condplot<-ggplot(WQ,aes(x=date4,y=cond,ymin=sdlow3,ymax=sdhi3,fill=trt0f, shape=trt0f))+
+  geom_errorbar(position=position_dodge(width=0.4), alpha=0.3, width=0.1)+
+  geom_point(size=4,position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab(expression(paste("Conductivity (", mu, "s/cm)")))+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))  
+
+condplot
+
+
+####Turbidity#####
+turbplot<-ggplot(WQ,aes(x=date4,y=turb,ymin=sdlow4,ymax=sdhi4,fill=trt0f, shape=trt0f))+
+  geom_errorbar(position=position_dodge(width=0.4), alpha=0.3, width=0.1)+
+  geom_point(size=4,position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab("Turbidity (NTU)")+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))  
+
+turbplot
+
+
+####Temeprature####
+tempplot<-ggplot(WQ,aes(x=date4,y=temp,ymin=sdlow5,ymax=sdhi5,fill=trt0f, shape=trt0f))+
+  geom_errorbar(position=position_dodge(width=0.4), alpha=0.3, width=0.1)+
+  geom_point(size=4,position=position_dodge(width=0.4))+
+  xlab("Day of Experiment")+
+  ylab(expression("Temperature " ( degree*C)))+
+  scale_shape_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c(21,22,23,24))+
+  scale_fill_manual(name="Treatment", labels = c("Control", "Atrazine", "Selenium", "Atrazine and Selenium"),  values = c("grey0","grey35","grey70","grey100"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(color="black"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.title = element_text(face="bold", size="11"))  
+
+tempplot
+```
+
